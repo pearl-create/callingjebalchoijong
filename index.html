@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>화상통화형 실시간 비속어 감지 (시각 경고판)</title>
+  <title>화상통화형 실시간 비속어 감지 (시각 경고판, 배경 소음 예외)</title>
 
   <!-- TFJS + Speech Commands -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
@@ -38,8 +38,8 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>🎥 화상통화형 실시간 비속어 감지</h1>
-    <p>왼쪽은 내 카메라, 오른쪽은 가상 상대방 화면입니다.</p>
+    <h1>🎥 다감 - 결</h1>
+    <p>멘토, 멘티와 즐거운 시간 되시기 바랍니다!.</p>
     <button id="start">시작하기</button>
 
     <div class="video-area">
@@ -75,6 +75,7 @@ const bodyEl=document.body;
 const THRESHOLD = 0.80;
 let lastAlertAt = 0;
 const ALERT_COOLDOWN = 1500;
+const IGNORE_LABELS = ["배경 소음", "background noise"]; // 🚫 경고 제외 대상
 
 function buildMeters(){
   labelsEl.innerHTML='';
@@ -131,13 +132,15 @@ function updateMeters(scores){
     row._refs.fill.style.width = Math.max(0, Math.min(100, prob*100))+'%';
     if(prob>bestVal){bestVal=prob; bestIdx=i;}
   }
-  logEl.textContent = `${labels[bestIdx]} : ${(bestVal*100).toFixed(1)}%`;
+  const bestLabel = labels[bestIdx];
+  logEl.textContent = `${bestLabel} : ${(bestVal*100).toFixed(1)}%`;
 
-  // 🚨 임계치 초과 시 경고
+  // 🚨 임계치 초과 + 예외 아닌 경우만 경고
   const now = Date.now();
-  if(bestVal >= THRESHOLD && now - lastAlertAt > ALERT_COOLDOWN){
+  const isIgnored = IGNORE_LABELS.some(l => bestLabel.includes(l));
+  if(bestVal >= THRESHOLD && !isIgnored && now - lastAlertAt > ALERT_COOLDOWN){
     lastAlertAt = now;
-    warnEl.textContent = `⚠️ 경고: '${labels[bestIdx]}' 확률 ${(bestVal*100).toFixed(1)}%`;
+    warnEl.textContent = `⚠️ 경고: '${bestLabel}' 확률 ${(bestVal*100).toFixed(1)}%`;
     flashBorder();
   }
 }
