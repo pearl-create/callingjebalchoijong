@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>화상통화형 실시간 비속어 감지 (가상 상대방 화면 추가)</title>
+
+  <!-- TFJS + SpeechCommands -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.4/dist/speech-commands.min.js"></script>
+
+  <style>
+    body{font-family:system-ui,Arial,sans-serif;background:#0b1020;color:#e6ecff;margin:0}
+    .wrap{max-width:980px;margin:0 auto;padding:24px}
+    h1{margin:0 0 8px}
+    p{margin:4px 0 18px;color:#93a0c3}
+    .video-area{display:flex;gap:20px;justify-content:center;flex-wrap:wrap}
+    .video-box{flex:1 1 45%;background:#12182c;border:1px solid #22315c;border-radius:16px;
+      padding:12px;text-align:center}
+    video{width:100%;max-width:420px;border-radius:12px;background:#000}
+    button{padding:10px 16px;border-radius:12px;border:1px solid #22315c;background:#1a2347;
+      color:#e6ecff;cursor:pointer}
+    button:hover{background:#22315c}
+    .meter{margin-top:16px;display:grid;gap:10px}
+    .row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
+    .bar{height:12px;background:#202a52;border-radius:999px;overflow:hidden;border:1px solid #2a3766}
+    .bar>i{display:block;height:100%;width:0%}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🎥 화상통화형 실시간 비속어 감지</h1>
+    <p>왼쪽은 내 카메라, 오른쪽은 가상 상대방 화면입니다.</p>
+    <button id="start">시작하기</button>
+
+    <div class="video-area">
+      <!-- 내 캠 -->
+      <div class="video-box">
+        <h3>나</h3>
+        <video id="cam" autoplay playsinline muted></video>
+      </div>
+
+      <!-- 가상 상대방 캠 -->
+      <div class="video-box">
+        <h3>상대방</h3>
+        <!-- 샘플 영상 (인터넷 연결 시 동작) -->
+        <video id="peer" autoplay loop muted>
+          <source src="https://cdn.pixabay.com/vimeo/406999325/people-34653.mp4?width=640" type="video/mp4">
+          브라우저가 video 태그를 지원하지 않습니다.
+        </video>
+      </div>
+    </div>
+
+    <div id="labels" class="meter"></div>
+    <div id="log" style="margin-top:12px;color:#9fe2ff"></div>
+  </div>
+
+<script>
+const MODEL_URL = "./model/";
+let recognizer, labels=[], listening=false;
+const startBtn=document.getElementById('start');
+const logEl=document.getElementById('log');
+const labelsEl=document.getElementById('labels');
+
+function buildMeters(){
+  labelsEl.innerHTML='';
+  labels.forEach(name=>{
+    const row=document.createElement('div'); row.className='row';
+    const lab=document.createElement('b'); lab.textContent=name;
+    const val=document.createElement('span'); val.textContent='0.00';
+    const bar=document.createElement('div'); bar.className='bar';
+    const fill=document.createElement('i'); bar.appendChild(fill);
+    row.appendChild(lab); row.appendChild(val); row.appendChild(bar);
+    labelsEl.appendChild(row);
+    row._refs={val,fill};
+  });
+}
+
+async function init(){
+  try{
+    logEl.textContent='모델 불러오는 중...';
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true, video:true});
+    document.getElementById('cam').srcObject = stream;
+
+    const MODEL_DIR = new URL(MODEL_URL, window.location.href).href;
+    const MODEL_JSON_URL = new URL("model.json", MODEL_DIR).href;
+    const METADATA_URL  = new URL("metadata.json", MODEL_DIR).href;
+
+    recognizer = speechCommands.create('BROWSER_FFT', undefined, MODEL_JSON_URL, METADATA_URL);
+    await recognizer.ensureModelLoaded();
+    labels = recognizer.wordLabels();
+    buildMeters();
+    logEl.textContent='감지 시작...';
+    startListening();
+  }catch(e){
+    console.error(e);
+    logEl.textContent='오류: '+(e && e.message ? e.message : e);
+  }
+}
+
+function updateMeters(scores){
+  const rows=labelsEl.querySelectorAll('.row');
+  let bestIdx=0, bestVal=-1;
+  for(let i=0;i<scores.length;i++){
+    const row=rows[i]; if(!row || !row._refs) continue;
+    const prob=scores[i];
+    row._refs.val.textContent=prob.toFixed(2);
+    row._refs.fill.style.width=Math.max(0, Math.min(100, prob*100))+'%';
+    if(prob>bestVal){bestVal=prob; bestIdx=i;}
+  }
+  logEl.textContent = `${labels[bestIdx]} : ${(bestVal*100).toFixed(1)}%`;
+}
+
+function startListening(){
+  if(listening) return; listening=true;
+  recognizer.listen(result=>{
+    const scores=result.scores;
+    updateMeters(scores);
+  }, {includeSpectrogram:true, overlapFactor:0.5});
+}
+
+startBtn.addEventListener('click', init);
+</script>
+</body>
+</html>
