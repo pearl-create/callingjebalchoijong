@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>화상통화형 실시간 비속어 감지 (가상 상대방 화면 추가)</title>
+  <title>화상통화형 실시간 비속어 감지 (시각 경고판)</title>
 
-  <!-- TFJS + SpeechCommands -->
+  <!-- TFJS + Speech Commands -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.4/dist/speech-commands.min.js"></script>
 
   <style>
-    body{font-family:system-ui,Arial,sans-serif;background:#0b1020;color:#e6ecff;margin:0}
+    body{font-family:system-ui,Arial,sans-serif;background:#0b1020;color:#e6ecff;margin:0;transition:box-shadow 0.3s ease;}
     .wrap{max-width:980px;margin:0 auto;padding:24px}
     h1{margin:0 0 8px}
     p{margin:4px 0 18px;color:#93a0c3}
@@ -25,6 +25,15 @@
     .row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
     .bar{height:12px;background:#202a52;border-radius:999px;overflow:hidden;border:1px solid #2a3766}
     .bar>i{display:block;height:100%;width:0%}
+    .warn-toast{
+      position:fixed; top:16px; right:16px; z-index:9999;
+      background:#ff4d4f; color:#fff; padding:12px 16px;
+      border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,.35);
+      font-weight:600; letter-spacing:.2px; display:none;
+    }
+    .flash-border{
+      box-shadow:0 0 0 6px rgba(255, 77, 79, 0.8);
+    }
   </style>
 </head>
 <body>
@@ -34,16 +43,13 @@
     <button id="start">시작하기</button>
 
     <div class="video-area">
-      <!-- 내 캠 -->
       <div class="video-box">
         <h3>나</h3>
         <video id="cam" autoplay playsinline muted></video>
       </div>
 
-      <!-- 가상 상대방 캠 -->
       <div class="video-box">
         <h3>상대방</h3>
-        <!-- 샘플 영상 (인터넷 연결 시 동작) -->
         <video id="peer" autoplay loop muted>
           <source src="https://cdn.pixabay.com/vimeo/406999325/people-34653.mp4?width=640" type="video/mp4">
           브라우저가 video 태그를 지원하지 않습니다.
@@ -55,12 +61,20 @@
     <div id="log" style="margin-top:12px;color:#9fe2ff"></div>
   </div>
 
+  <div id="warn" class="warn-toast">⚠️ 경고: 비속어 감지!</div>
+
 <script>
 const MODEL_URL = "./model/";
 let recognizer, labels=[], listening=false;
 const startBtn=document.getElementById('start');
 const logEl=document.getElementById('log');
 const labelsEl=document.getElementById('labels');
+const warnEl=document.getElementById('warn');
+const bodyEl=document.body;
+
+const THRESHOLD = 0.80;
+let lastAlertAt = 0;
+const ALERT_COOLDOWN = 1500;
 
 function buildMeters(){
   labelsEl.innerHTML='';
@@ -98,17 +112,34 @@ async function init(){
   }
 }
 
+function flashBorder(){
+  bodyEl.classList.add('flash-border');
+  warnEl.style.display='block';
+  setTimeout(()=>{
+    bodyEl.classList.remove('flash-border');
+    warnEl.style.display='none';
+  }, 1000);
+}
+
 function updateMeters(scores){
   const rows=labelsEl.querySelectorAll('.row');
   let bestIdx=0, bestVal=-1;
   for(let i=0;i<scores.length;i++){
     const row=rows[i]; if(!row || !row._refs) continue;
-    const prob=scores[i];
-    row._refs.val.textContent=prob.toFixed(2);
-    row._refs.fill.style.width=Math.max(0, Math.min(100, prob*100))+'%';
+    const prob = scores[i];
+    row._refs.val.textContent = prob.toFixed(2);
+    row._refs.fill.style.width = Math.max(0, Math.min(100, prob*100))+'%';
     if(prob>bestVal){bestVal=prob; bestIdx=i;}
   }
   logEl.textContent = `${labels[bestIdx]} : ${(bestVal*100).toFixed(1)}%`;
+
+  // 🚨 임계치 초과 시 경고
+  const now = Date.now();
+  if(bestVal >= THRESHOLD && now - lastAlertAt > ALERT_COOLDOWN){
+    lastAlertAt = now;
+    warnEl.textContent = `⚠️ 경고: '${labels[bestIdx]}' 확률 ${(bestVal*100).toFixed(1)}%`;
+    flashBorder();
+  }
 }
 
 function startListening(){
